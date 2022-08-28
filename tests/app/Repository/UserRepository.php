@@ -43,7 +43,18 @@ class UserRepository extends BaseRepository
 
     public function createOrUpdate($id = null, $request)
     { 
-        $model = is_null($id) ? new User : User::findOrFail($id);
+        // there is need to implement form validations and use try catch in the code properly. And we can Laravel Transaction to avoid any issue by commit and rollack but it depends on requirements. This is big function which needs to convert into small function which is more readable, resusable and testable easily
+    
+        if(is_null($id)) {         // this line  "$model = is_null($id) ? new User : User::findOrFail($id);" fails when a wrong id and system will send not found error
+            $model = new User();
+        } else {
+            $model = User::find($id);
+            if( !$model ){
+                return false;
+            }
+        }
+
+       
         $model->user_type = $request['role'];
         $model->name = $request['name'];
         $model->company_id = $request['company_id'] != '' ? $request['company_id'] : 0;
@@ -54,13 +65,12 @@ class UserRepository extends BaseRepository
         $model->mobile = $request['mobile'];
 
 
-        if (!$id || $id && $request['password']) $model->password = bcrypt($request['password']);
-        $model->detachAllRoles();
+        if ($request['password']) $model->password = bcrypt($request['password']); // there was extra id check condition 
         $model->save();
-        $model->attachRole($request['role']);
+        $model->syncRoles($request['role']); // this one line code work for both assign roles and deattach roles cases
         $data = array();
 
-        if ($request['role'] == env('CUSTOMER_ROLE_ID')) {
+        if ($request['role'] == config('app.customr_role_id')) { // It's not good approach to use env directly into the controller. Convention is to make driver in config/app.php. On the other hand, role is hard coded even are using roles and permission spatie packege. Role name should used than id and get from db.
 
             if($request['consumer_type'] == 'paid')
             {
@@ -69,7 +79,7 @@ class UserRepository extends BaseRepository
                     $type = Type::where('code', 'paid')->first();
                     $company = Company::create(['name' => $request['name'], 'type_id' => $type->id, 'additional_info' => 'Created automatically for user ' . $model->id]);
                     $department = Department::create(['name' => $request['name'], 'company_id' => $company->id, 'additional_info' => 'Created automatically for user ' . $model->id]);
-
+                    
                     $model->company_id = $company->id;
                     $model->department_id = $department->id;
                     $model->save();
@@ -79,7 +89,7 @@ class UserRepository extends BaseRepository
             $user_meta = UserMeta::firstOrCreate(['user_id' => $model->id]);
             $old_meta = $user_meta->toArray();
             $user_meta->consumer_type = $request['consumer_type'];
-            $user_meta->customer_type = $request['customer_type'];
+            // $user_meta->customer_type = $request['customer_type'];
             $user_meta->username = $request['username'];
             $user_meta->post_code = $request['post_code'];
             $user_meta->address = $request['address'];
@@ -129,7 +139,7 @@ class UserRepository extends BaseRepository
             }
 
 
-        } else if ($request['role'] == env('TRANSLATOR_ROLE_ID')) {
+        } else if ($request['role'] == config('app.translator_role_id')) { // It's not good approach to use env directly into the controller. Convention is to make driver in config/app.php. On the other hand, role is hard coded even are using roles and permission spatie packege. Role name should used than id and get from db.
 
             $user_meta = UserMeta::firstOrCreate(['user_id' => $model->id]);
 
@@ -183,9 +193,9 @@ class UserRepository extends BaseRepository
             $newTownsId = $towns->id;
         }
 
-        $townidUpdated = [];
+        $townidUpdated = []; // this is extra line coz we are not using $townidUpdated in code
         if ($request['user_towns_projects']) {
-            $del = DB::table('user_towns')->where('user_id', '=', $model->id)->delete();
+            $del = DB::table('user_towns')->where('user_id', '=', $model->id)->delete(); // this is not good approach to use db query, can be used when we can't achieve with eloquent query in complex use cases 
             foreach ($request['user_towns_projects'] as $townId) {
                 $userTown = new UserTowns();
                 $already_exit = $userTown::townExist($model->id, $townId);
@@ -194,7 +204,7 @@ class UserRepository extends BaseRepository
                     $userTown->town_id = $townId;
                     $userTown->save();
                 }
-                $townidUpdated[] = $townId;
+                $townidUpdated[] = $townId; // this is extra line coz we are not using $townidUpdated in code
 
             }
         }
